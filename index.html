@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CL3 教室座位劃位系統</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Firebase App (v9 compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <!-- Firebase Realtime Database (v9 compat) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
+
+  <style>
+    .seat-btn {
+      transition: all 0.2s ease;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+
+  <!-- 頂部導覽列 -->
+  <header class="bg-blue-600 text-white shadow-md">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+      <h1 class="text-xl font-bold flex items-center gap-2">
+        <span>🏫</span> CL3 教室座位劃位系統
+      </h1>
+      <div class="flex items-center gap-3">
+        <select id="classSelect" onchange="switchClass(this.value)" class="bg-blue-700 text-white text-sm rounded px-3 py-1.5 border border-blue-500 focus:outline-none">
+          <option value="class_1">小六資數上午班</option>
+          <option value="class_2">小六資數下午班</option>
+          <option value="class_3">小六國文</option>
+          <option value="class_4">寒假私中模考營</option>
+          <option value="class_5">寒假公校成長營</option>
+          <option value="class_6">英檢班</option>
+          <option value="class_7">英模營</option>
+        </select>
+        <button onclick="openAdminModal()" class="text-xs bg-blue-700 hover:bg-blue-800 px-3 py-1.5 rounded border border-blue-500 transition">
+          管理員登入
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主要內容區 -->
+  <main class="max-w-7xl mx-auto px-4 py-6 flex-grow grid grid-cols-1 lg:grid-cols-4 gap-6 w-full">
+    
+    <!-- 左側：學生資料填寫與個人狀態 -->
+    <div class="lg:col-span-1 space-y-6">
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+          <span>👤</span> 填寫學生資料
+        </h2>
+        <div class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-600 mb-1">學生姓名</label>
+            <input type="text" id="studentName" placeholder="請輸入全名" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-600 mb-1">年級</label>
+            <select id="studentGrade" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+              <option value="小六">小六</option>
+              <option value="小五">小五</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-600 mb-1">家長手機 (作為識別碼)</label>
+            <input type="tel" id="parentPhone" placeholder="例如: 0912345678" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+          </div>
+          <button onclick="saveStudentProfile()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm transition">
+            儲存基本資料
+          </button>
+        </div>
+      </div>
+
+      <!-- 個人劃位狀態卡片 -->
+      <div id="myPassCard" class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 hidden">
+        <h3 class="text-sm font-semibold text-gray-700 mb-2">📌 我的劃位資訊</h3>
+        <div id="myPassContent" class="text-sm text-gray-600 space-y-1"></div>
+        <button onclick="clearMyBooking()" class="mt-3 w-full bg-red-50 hover:bg-red-100 text-red-600 font-medium py-1.5 rounded-lg text-xs transition border border-red-200">
+          取消目前座位
+        </button>
+      </div>
+    </div>
+
+    <!-- 右側：教室座位表展示 -->
+    <div class="lg:col-span-3 bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center">
+      <div class="w-full flex justify-between items-center mb-6">
+        <div>
+          <h2 id="classNameTitle" class="text-xl font-bold text-gray-800">教室座位表</h2>
+          <p id="classDesc" class="text-sm text-gray-500">載入中...</p>
+        </div>
+        <!-- 圖例說明 -->
+        <div class="flex items-center gap-4 text-xs">
+          <div class="flex items-center gap-1.5">
+            <span class="w-3 h-3 bg-emerald-500 rounded-sm inline-block"></span> 可選
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="w-3 h-3 bg-rose-500 rounded-sm inline-block"></span> 已選
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="w-3 h-3 bg-amber-500 rounded-sm inline-block"></span> 你的座位
+          </div>
+        </div>
+      </div>
+
+      <!-- 講台標示 -->
+      <div class="w-3/4 bg-gray-200 text-gray-600 text-center py-2 rounded-lg text-sm font-medium mb-8 tracking-widest shadow-inner">
+        講台 / 黑板方向
+      </div>
+
+      <!-- 座位配置容器 -->
+      <div id="seatingContainer" class="w-full flex justify-center overflow-x-auto pb-4">
+        <!-- 動態渲染座位 -->
+      </div>
+    </div>
+  </main>
+
+  <!-- 彈跳視窗：確認劃位 -->
+  <div id="bookingModal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl max-w-sm w-full p-6 space-y-4 shadow-xl">
+      <h3 class="text-lg font-bold text-gray-800">確認劃位</h3>
+      <p id="modalSeatInfo" class="text-sm text-gray-600"></p>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('bookingModal')" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm transition">取消</button>
+        <button onclick="confirmBooking()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm transition">確認選位</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 彈跳視窗：管理員登入 -->
+  <div id="adminModal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl max-w-sm w-full p-6 space-y-4 shadow-xl">
+      <h3 class="text-lg font-bold text-gray-800">管理員登入</h3>
+      <div>
+        <label class="block text-sm font-medium text-gray-600 mb-1">請輸入管理員密碼</label>
+        <input type="password" id="adminPassword" placeholder="預設: admin123" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm">
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button onclick="closeModal('adminModal')" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 rounded-lg text-sm transition">取消</button>
+        <button onclick="verifyAdmin()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-sm transition">登入後台</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 提示訊息 Toast -->
+  <div id="toast" class="fixed bottom-5 right-5 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg text-sm opacity-0 transition-opacity duration-300 pointer-events-none z-50">
+    提示訊息
+  </div>
+
+  <script>
+    // Firebase 設定與初始化
+    const firebaseConfig = {
+      apiKey: "AIzaSyAz_your_actual_config_here", // 請保留您原本專案的 config
+      authDomain: "seat-jingmei.firebaseapp.com",
+      databaseURL: "https://seat-jingmei-default-rtdb.firebaseio.com",
+      projectId: "seat-jingmei",
+      storageBucket: "seat-jingmei.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcde"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database(); // 使用 Realtime Database
+
+    // 班級定義與排版結構
+    const classConfigs = {
+      class_1: { name: "小六資數上午班", type: "side_by_side", desc: "左右各 5x5 雙排座設計", rows: 5, colsPerSide: 5 },
+      class_2: { name: "小六資數下午班", type: "side_by_side", desc: "左右各 5x5 雙排座設計", rows: 5, colsPerSide: 5 },
+      class_3: { name: "小六國文", type: "side_by_side", desc: "左右各 5x5 雙排座設計", rows: 5, colsPerSide: 5 },
+      class_4: { name: "寒假私中模考營", type: "triple_block", desc: "3-6-3 三區塊雙走道設計", rows: 6, layout: [3, 6, 3] },
+      class_5: { name: "寒假公校成長營", type: "triple_block", desc: "3-6-3 三區塊雙走道設計", rows: 6, layout: [3, 6, 3] },
+      class_6: { name: "英檢班", type: "standard_row", desc: "3列5排 走道 3x5 設計", rows: 5, cols: 3 },
+      class_7: { name: "英模營", type: "standard_row", desc: "3列5排 走道 3x5 設計", rows: 5, cols: 3 }
+    };
+
+    let currentClassId = "class_1";
+    let isAdmin = false;
+    let selectedSeatId = null;
+    let currentStudent = null;
+    let currentRef = null;
+    let seatsData = {};
+
+    // 初始化載入
+    window.onload = function() {
+      loadStudentProfileFromStorage();
+      switchClass("class_1");
+    };
+
+    function loadStudentProfileFromStorage() {
+      const saved = localStorage.getItem("cl3_student");
+      if (saved) {
+        try {
+          currentStudent = JSON.parse(saved);
+          document.getElementById("studentName").value = currentStudent.name || "";
+          document.getElementById("studentGrade").value = currentStudent.grade || "小六";
+          document.getElementById("parentPhone").value = currentStudent.phone || "";
+        } catch(e) {}
+      }
+    }
+
+    function saveStudentProfile() {
+      const name = document.getElementById("studentName").value.trim();
+      const grade = document.getElementById("studentGrade").value;
+      const phone = document.getElementById("parentPhone").value.trim();
+
+      if (!name || !phone) {
+        alert("請完整填寫學生姓名與家長電話！");
+        return;
+      }
+      currentStudent = { name, grade, phone };
+      localStorage.setItem("cl3_student", JSON.stringify(currentStudent));
+      showToast("學生基本資料已儲存！請點選綠色可選座位進行劃位。");
+    }
+
+    function switchClass(classId) {
+      currentClassId = classId;
+      document.getElementById("classSelect").value = classId;
+      document.getElementById("classNameTitle").innerText = classConfigs[classId].name;
+      document.getElementById("classDesc").innerText = classConfigs[classId].desc;
+      
+      if (currentRef) {
+        currentRef.off(); // 取消上一個班級的監聽
+      }
+
+      listenToClassBookings();
+    }
+
+    // 監聽 Realtime Database 即時資料
+    function listenToClassBookings() {
+      currentRef = db.ref("seatBookings/" + currentClassId);
+      
+      currentRef.on("value", (snapshot) => {
+        const data = snapshot.val();
+        seatsData = (data && data.seats) ? data.seats : {};
+        renderSeatingChart();
+        updateMyPassCard();
+      }, (error) => {
+        console.error("Database Error: ", error);
+        showToast("雲端同步連線異常");
+      });
+    }
+
+    // 渲染座位表
+    function renderSeatingChart() {
+      const container = document.getElementById("seatingContainer");
+      container.innerHTML = "";
+      const config = classConfigs[currentClassId];
+
+      if (config.type === "side_by_side") {
+        let gridDiv = document.createElement("div");
+        gridDiv.className = "flex gap-8 justify-center";
+
+        let leftSide = createSubGrid(config.rows, config.colsPerSide, "L");
+        let rightSide = createSubGrid(config.rows, config.colsPerSide, "R");
+
+        gridDiv.appendChild(leftSide);
+        gridDiv.appendChild(rightSide);
+        container.appendChild(gridDiv);
+      } else if (config.type === "triple_block") {
+        let gridDiv = document.createElement("div");
+        gridDiv.className = "flex gap-4 justify-center";
+
+        config.layout.forEach((colCount, idx) => {
+          let blockSide = createSubGrid(config.rows, colCount, `B${idx+1}`);
+          gridDiv.appendChild(blockSide);
+        });
+        container.appendChild(gridDiv);
+      } else if (config.type === "standard_row") {
+        let gridDiv = createSubGrid(config.rows, config.cols, "S");
+        container.appendChild(gridDiv);
+      }
+    }
+
+    function createSubGrid(rows, cols, prefix) {
+      let subDiv = document.createElement("div");
+      subDiv.className = "grid gap-2";
+      subDiv.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+
+      for (let r = 1; r <= rows; r++) {
+        for (let c = 1; c <= cols; c++) {
+          let seatId = `${prefix}-${r}-${c}`;
+          let seatBtn = document.createElement("button");
+          seatBtn.className = "seat-btn w-12 h-12 rounded-lg font-bold text-xs flex flex-col items-center justify-center border shadow-sm";
+          
+          let seatInfo = seatsData[seatId];
+          let isMySeat = currentStudent && seatInfo && seatInfo.phone === currentStudent.phone;
+
+          if (isMySeat) {
+            seatBtn.className += " bg-amber-500 border-amber-600 text-white shadow-md ring-2 ring-amber-300";
+            seatBtn.innerHTML = `<span>${seatId.split('-')[0]}</span><span class="text-[10px] truncate max-w-[40px]">${seatInfo.name}</span>`;
+          } else if (seatInfo) {
+            seatBtn.className += " bg-rose-500 border-rose-600 text-white cursor-not-allowed";
+            seatBtn.innerHTML = `<span>已選</span><span class="text-[10px] truncate max-w-[40px]">${seatInfo.name}</span>`;
+            if (!isAdmin) seatBtn.disabled = true;
+          } else {
+            seatBtn.className += " bg-emerald-500 hover:bg-emerald-600 border-emerald-600 text-white cursor-pointer";
+            seatBtn.innerText = seatId;
+            seatBtn.onclick = () => handleSeatClick(seatId);
+          }
+
+          if (isAdmin && seatInfo) {
+            seatBtn.onclick = () => adminRemoveSeat(seatId);
+            seatBtn.title = "管理員點擊可釋放此座位";
+          }
+
+          subDiv.appendChild(seatBtn);
+        }
+      }
+      return subDiv;
+    }
+
+    function handleSeatClick(seatId) {
+      if (!currentStudent || !currentStudent.name || !currentStudent.phone) {
+        alert("請先在左側填寫並儲存學生姓名與家長電話！");
+        return;
+      }
+      selectedSeatId = seatId;
+      document.getElementById("modalSeatInfo").innerText = `學生：${currentStudent.name}\n準備預訂座位：${seatId}`;
+      document.getElementById("bookingModal").classList.remove("hidden");
+    }
+
+    // 確認劃位寫入 Realtime Database
+    async function confirmBooking() {
+      if (!selectedSeatId || !currentStudent) return;
+
+      const seatRef = db.ref("seatBookings/" + currentClassId + "/seats");
+
+      try {
+        await seatRef.transaction((seats) => {
+          if (!seats) seats = {};
+
+          for (let sId in seats) {
+            if (seats[sId].phone === currentStudent.phone) {
+              throw new Error("您已經在此班級劃過位了！若要換位請先取消原座位。");
+            }
+          }
+
+          if (seats[selectedSeatId]) {
+            throw new Error("真不巧！這個座位剛剛已經被別人先一步選走了。");
+          }
+
+          seats[selectedSeatId] = {
+            name: currentStudent.name,
+            grade: currentStudent.grade,
+            phone: currentStudent.phone,
+            time: new Date().toISOString()
+          };
+
+          return seats;
+        });
+
+        closeModal('bookingModal');
+        showToast("恭喜您！座位劃位成功！");
+      } catch (err) {
+        alert(err.message || "劃位失敗，請再試一次");
+        closeModal('bookingModal');
+      }
+    }
+
+    // 取消自己的劃位
+    async function clearMyBooking() {
+      if (!currentStudent) return;
+      if (!confirm("確定要取消目前的座位嗎？")) return;
+
+      const seatRef = db.ref("seatBookings/" + currentClassId + "/seats");
+      try {
+        await seatRef.transaction((seats) => {
+          if (!seats) return seats;
+          for (let sId in seats) {
+            if (seats[sId].phone === currentStudent.phone) {
+              delete seats[sId];
+            }
+          }
+          return seats;
+        });
+        showToast("已成功取消劃位。");
+      } catch(err) {
+        alert("取消失敗：" + err.message);
+      }
+    }
+
+    function updateMyPassCard() {
+      const card = document.getElementById("myPassCard");
+      const content = document.getElementById("myPassContent");
+      if (!currentStudent || !currentStudent.phone) {
+        card.classList.add("hidden");
+        return;
+      }
+
+      let mySeatId = null;
+      for (let sId in seatsData) {
+        if (seatsData[sId].phone === currentStudent.phone) {
+          mySeatId = sId;
+          break;
+        }
+      }
+
+      if (mySeatId) {
+        card.classList.remove("hidden");
+        content.innerHTML = `
+          <p><strong>學生：</strong>${currentStudent.name}</p>
+          <p><strong>座位：</strong><span class="text-blue-600 font-bold">${mySeatId}</span></p>
+        `;
+      } else {
+        card.classList.add("hidden");
+      }
+    }
+
+    function openAdminModal() {
+      document.getElementById("adminModal").classList.remove("hidden");
+    }
+
+    function verifyAdmin() {
+      const pwd = document.getElementById("adminPassword").value;
+      if (pwd === "admin123") {
+        isAdmin = true;
+        closeModal('adminModal');
+        showToast("已切換為管理員模式");
+        renderSeatingChart();
+      } else {
+        alert("密碼錯誤！");
+      }
+    }
+
+    async function adminRemoveSeat(seatId) {
+      if (!confirm(`管理員確定要釋放座位 ${seatId} 嗎？`)) return;
+      const seatRef = db.ref("seatBookings/" + currentClassId + "/seats/" + seatId);
+      await seatRef.remove();
+      showToast("已強制釋放座位");
+    }
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).classList.add("hidden");
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.innerText = message;
+      toast.classList.remove("opacity-0");
+      setTimeout(() => {
+        toast.classList.add("opacity-0");
+      }, 3000);
+    }
+  </script>
+</body>
+</html>
